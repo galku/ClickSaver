@@ -206,6 +206,19 @@ BOOL ResolveInstallRoot( const char* inputPath, char* outputPath )
     return FALSE;
 }
 
+BOOL GetInstallPathFromUI( char* outputPath )
+{
+    char* pBuffer = (char*)puGetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER );
+    if( !pBuffer || !pBuffer[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    strncpy( outputPath, pBuffer, MAX_PATH - 1 );
+    outputPath[ MAX_PATH - 1 ] = 0;
+    return TRUE;
+}
+
 typedef enum ImportSettingsMode
 {
     ISM_CONFIG,
@@ -707,6 +720,30 @@ int main( int argc, char** argv )
         }
         break;
 
+        case CSAM_VALIDATE_INSTALLDIR:
+        {
+            char folder[ MAX_PATH ];
+            if( GetInstallPathFromUI( folder ) )
+            {
+                char resolvedDir[ MAX_PATH ];
+                if( ResolveInstallRoot( folder, resolvedDir ) )
+                {
+                    strcpy( g_AODir, resolvedDir );
+                    puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                    DisplayErrorMessage( "Install directory validated successfully.", FALSE );
+                }
+                else
+                {
+                    DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                }
+            }
+            else
+            {
+                DisplayErrorMessage( "Please enter or browse to a PRK/AO install directory.", FALSE );
+            }
+        }
+        break;
+
         case CSAM_STOPFULLSCREEN:
             g_bFullscreen = 0;
             puSetAttribute( puGetObjectFromCollection( g_pCol, CS_FULLSCREEN_WINDOW ), PUA_WINDOW_OPENED, FALSE );
@@ -960,6 +997,10 @@ void ImportSettings( char* filename )
                 {
                 case CFG_AODIR:
                     strcpy( g_AODir, Value );
+                    if( g_pCol )
+                    {
+                        puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                    }
                     break;
 
                 case CFG_WINDOWX:

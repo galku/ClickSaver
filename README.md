@@ -9,6 +9,25 @@ This is an *unofficial* fork of ClickSaver (if you want to call the current situ
 VS2022 with the toolchain set to v141_xp to get CS to still run under WinXP additonal to all newer Windows versions.
 The solution should still work in all VS versions down to VS2010 if the toolset is changed to the latest version supported by that version.
 
+## PRK/AO fork support
+
+This fork adds a new install-directory option for PRK-style Anarchy Online installs. The UI now includes:
+
+- an editable install path field
+- a `Browse...` button for folder selection
+- a `Validate` button to confirm the selected or typed directory
+
+The app accepts both classic AO install roots and PRK layouts such as `M:\prk2\client` or `C:\Users\madcow\AppData\Local\Funcom\Anarchy Online\8d86be5c\client`.
+
+## Fork and push
+
+Create your own GitHub fork, then add it as a remote and push the feature branch:
+
+```bash
+git remote add myfork https://github.com/<your-user>/ClickSaver.git
+git push myfork prk-install-ui
+```
+
 
 ## Quick history tour
 
