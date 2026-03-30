@@ -80,6 +80,7 @@ void ImportSettings( char* filename );
 void ExportSettings( char* filename );
 
 void DisplayErrorMessage( PUU8* _pMessage, PUU32 _bAsynchronous );
+void WriteStartupLog( const char* Format, ... );
 
 void GetFolder( HWND hWndOwner, char *strTitle, char *strPath );
 BOOL GetFile( HWND hWndOwner, BOOL saving, char *buffer, int buffersize );
@@ -269,12 +270,14 @@ int main( int argc, char** argv )
     // Initialise PUL
     if( !puInit() )
     {
+        WriteStartupLog( "Startup error: puInit failed\n" );
         return -1;
     }
 
     // Register mission control class
     if( !RegisterMissionClass() )
     {
+        WriteStartupLog( "Startup error: RegisterMissionClass failed\n" );
         CleanUp();
         return -1;
     }
@@ -282,6 +285,7 @@ int main( int argc, char** argv )
     // Create the windows
     if( !( g_pCol = puCreateObjectCollection( g_GUIDef ) ) )
     {
+        WriteStartupLog( "Startup error: puCreateObjectCollection failed\n" );
         CleanUp();
         return -1;
     }
@@ -292,8 +296,10 @@ int main( int argc, char** argv )
 
     // Get current directory
     GetCurrentDirectory( MAX_PATH, g_CSDir );
+    WriteStartupLog( "Startup: current directory=%s\n", g_CSDir );
 
     ImportSettings( "LastSettings.cs" );
+    WriteStartupLog( "Startup: imported LastSettings.cs, AODir=%s\n", g_AODir );
 
     if( puGetAttribute( puGetObjectFromCollection( g_pCol, CS_STARTMIN_CB ), PUA_CHECKBOX_CHECKED ) )
         puSetAttribute( g_MainWin, PUA_WINDOW_ICONIFIED, TRUE );
@@ -305,9 +311,11 @@ int main( int argc, char** argv )
         if( ValidateInstallDir( g_AODir, resolvedDir ) )
         {
             strcpy( g_AODir, resolvedDir );
+            WriteStartupLog( "Startup: resolved saved AODir to %s\n", g_AODir );
         }
         else
         {
+            WriteStartupLog( "Startup: saved AODir invalid: %s\n", g_AODir );
             g_AODir[ 0 ] = 0;
             DisplayErrorMessage( "Saved PRK/AO install directory is invalid. Please choose a valid install directory in the PRK/AO options.", FALSE );
         }
@@ -326,15 +334,18 @@ int main( int argc, char** argv )
             if( ValidateInstallDir( folder, resolvedDir ) )
             {
                 strcpy( g_AODir, resolvedDir );
+                WriteStartupLog( "Startup: selected AODir %s\n", g_AODir );
             }
             else
             {
+                WriteStartupLog( "Startup: selected invalid AODir %s\n", folder );
                 DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
                 g_AODir[ 0 ] = 0;
             }
         }
         else
         {
+            WriteStartupLog( "Startup: no PRK/AO install directory selected\n" );
             DisplayErrorMessage( "PRK/AO install directory was not configured. Please set it in the PRK/AO options.", FALSE );
         }
     }
@@ -425,6 +436,7 @@ int main( int argc, char** argv )
     // Create Berkeley DB handle
     if( db_create( &g_pDB, NULL, 0 ) )
     {
+        WriteStartupLog( "Startup error: db_create failed\n" );
         DisplayErrorMessage( "Couldn't create Berkeley DB handle.", FALSE );
         CleanUp();
         return -1;
@@ -434,6 +446,7 @@ int main( int argc, char** argv )
 
     if( !OpenLocalDB() )
     {
+        WriteStartupLog( "Startup warning: OpenLocalDB failed, AODir=%s\n", g_AODir );
         if( g_AODir[ 0 ] )
         {
             DisplayErrorMessage( "Couldn't open local database. Please validate your PRK/AO install directory and restart the app.", FALSE );
@@ -448,6 +461,7 @@ int main( int argc, char** argv )
     // Create mutex
     if( ( g_Mutex = CreateMutex( NULL, FALSE, "ClickSaver" ) ) == INVALID_HANDLE_VALUE )
     {
+        WriteStartupLog( "Startup error: CreateMutex failed, err=%u\n", GetLastError() );
         DisplayErrorMessage( "Couldn't create mutex.", FALSE );
         ReleaseAODatabase();
         CleanUp();
@@ -458,6 +472,7 @@ int main( int argc, char** argv )
         HWND hWnd;
         if( hWnd = FindWindow( "ClickSaverHookWindowClass", "ClickSaverHookWindow" ) )
         {
+            WriteStartupLog( "Startup error: another instance detected\n" );
             // send some message
             return -1;
         }
@@ -465,6 +480,7 @@ int main( int argc, char** argv )
     // Starts dll hook management thread
     if( ( g_Thread = CreateThread( NULL, 0, &HookManagerThread, NULL, 0, &dwThreadID ) ) == INVALID_HANDLE_VALUE )
     {
+        WriteStartupLog( "Startup error: CreateThread failed, err=%u\n", GetLastError() );
         DisplayErrorMessage( "Couldn't create hook thread.", FALSE );
         ReleaseAODatabase();
         CleanUp();
@@ -1354,6 +1370,7 @@ void ExportSettings( char* filename )
 
 void DisplayErrorMessage( PUU8* _pMessage, PUU32 _bAsynchronous )
 {
+    WriteStartupLog( "DisplayErrorMessage: %s\n", _pMessage );
     puSetAttribute( puGetObjectFromCollection( g_pCol, CS_ERROR_TEXT ), PUA_TEXT_STRING, (PUU32)_pMessage );
     puSetAttribute( puGetObjectFromCollection( g_pCol, CS_ERROR_WINDOW ), PUA_WINDOW_OPENED, TRUE );
 
@@ -1576,6 +1593,34 @@ void WriteLog( const char* Format, ... )
         va_end( argptr );
     }
     /**/
+}
+
+
+void WriteStartupLog( const char* Format, ... )
+{
+    va_list argptr;
+    static FILE *fp = NULL;
+    if( Format == NULL )
+    {
+        if( fp )
+        {
+            fclose( fp );
+            fp = NULL;
+        }
+        return;
+    }
+    if( !fp )
+    {
+        fp = fopen( "clicksaver.log", "a" );
+    }
+    if( !fp )
+    {
+        return;
+    }
+    va_start( argptr, Format );
+    vfprintf( fp, Format, argptr );
+    va_end( argptr );
+    fflush( fp );
 }
 
 
