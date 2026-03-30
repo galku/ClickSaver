@@ -412,7 +412,7 @@ PUU32 g_GUIDef[]=
 
 // **** Options tab ****
     PU_ACTION_OBJDEF, CS_OPTIONS_TAB, ( PUU32 )"VerGroup", 0,
-        PUM_ADDCHILD, PU_TITLE( "ClickSaver "CS_VERSION ),
+        PUM_ADDCHILD, PU_TITLE( "ClickSaver PRK Edition by Cow "CS_VERSION ),
         PUM_ADDCHILD, PU_LABEL( "Originally by MORB, Updates by Gnarf, Darkbane & Uragon" ),
         PUM_ADDCHILD, PU_LABEL( "https://github.com/pzychotic/ClickSaver/releases" ),
         PUM_ADDCHILD, PU_LABEL( " " ),

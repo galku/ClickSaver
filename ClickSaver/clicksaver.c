@@ -219,6 +219,27 @@ BOOL GetInstallPathFromUI( char* outputPath )
     return TRUE;
 }
 
+BOOL ValidateInstallDir( const char* folder, char* resolvedPath )
+{
+    char exePath[ MAX_PATH ];
+    if( !folder || !folder[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    if( !ResolveInstallRoot( folder, resolvedPath ) )
+    {
+        return FALSE;
+    }
+
+    if( !FindGameExecutable( resolvedPath, exePath ) )
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
+
 typedef enum ImportSettingsMode
 {
     ISM_CONFIG,
@@ -281,75 +302,88 @@ int main( int argc, char** argv )
     {
         char resolvedDir[ MAX_PATH ];
 
-        if( ResolveInstallRoot( g_AODir, resolvedDir ) )
+        if( ValidateInstallDir( g_AODir, resolvedDir ) )
         {
             strcpy( g_AODir, resolvedDir );
         }
         else
         {
             g_AODir[ 0 ] = 0;
+            DisplayErrorMessage( "Saved PRK/AO install directory is invalid. Please choose a valid install directory in the PRK/AO options.", FALSE );
+        }
+    }
+
+    if( !g_AODir[ 0 ] )
+    {
+        char folder[ MAX_PATH ] = { 0 };
+
+        GetFolder( NULL, "Please locate the PRK/AO install directory:", folder );
+        SetCurrentDirectory( g_CSDir );
+
+        if( folder[ 0 ] )
+        {
+            char resolvedDir[ MAX_PATH ];
+            if( ValidateInstallDir( folder, resolvedDir ) )
+            {
+                strcpy( g_AODir, resolvedDir );
+            }
+            else
+            {
+                DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                g_AODir[ 0 ] = 0;
+            }
+        }
+        else
+        {
+            DisplayErrorMessage( "PRK/AO install directory was not configured. Please set it in the PRK/AO options.", FALSE );
         }
     }
 
     if( g_AODir[ 0 ] )
     {
         puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
-    }
 
-    if( !g_AODir[ 0 ] )
-    {
-        GetFolder( NULL, "Please locate the PRK/AO install directory:", g_AODir );
-
-        if( !g_AODir[ 0 ] )
-        {
-            CleanUp();
-            return -1;
-        }
-
-        char resolvedDir[ MAX_PATH ];
-        if( !ResolveInstallRoot( g_AODir, resolvedDir ) )
+        if( !FindGameExecutable( g_AODir, AOExePath ) )
         {
             DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
-            CleanUp();
-            return -1;
+            g_AODir[ 0 ] = 0;
         }
-
-        strcpy( g_AODir, resolvedDir );
-    }
-
-    if( !FindGameExecutable( g_AODir, AOExePath ) )
-    {
-        DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
-        CleanUp();
-        return -1;
     }
 
     /* Check if local database is up to date */
-    hLocalDB = CreateFile( "AODatabase.bdb", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
-
-    if( hLocalDB != INVALID_HANDLE_VALUE )
+    if( g_AODir[ 0 ] )
     {
-        sprintf( DBPath, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", g_AODir );
-        hOrigDB = CreateFile( DBPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
+        hLocalDB = CreateFile( "AODatabase.bdb", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
 
-        if( hOrigDB != INVALID_HANDLE_VALUE )
+        if( hLocalDB != INVALID_HANDLE_VALUE )
         {
-            FILETIME OrigTime, LocalTime;
+            sprintf( DBPath, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", g_AODir );
+            hOrigDB = CreateFile( DBPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
 
-            GetFileTime( hLocalDB, NULL, NULL, &LocalTime );
-            GetFileTime( hOrigDB, NULL, NULL, &OrigTime );
+            if( hOrigDB != INVALID_HANDLE_VALUE )
+            {
+                FILETIME OrigTime, LocalTime;
 
-            if( CompareFileTime( &OrigTime, &LocalTime ) >= 0 )
-                bUpdateDB = TRUE;
+                GetFileTime( hLocalDB, NULL, NULL, &LocalTime );
+                GetFileTime( hOrigDB, NULL, NULL, &OrigTime );
 
-            CloseHandle( hOrigDB );
+                if( CompareFileTime( &OrigTime, &LocalTime ) >= 0 )
+                    bUpdateDB = TRUE;
+
+                CloseHandle( hOrigDB );
+            }
+
+            CloseHandle( hLocalDB );
         }
-
-        CloseHandle( hLocalDB );
+        else
+        {
+            bUpdateDB = TRUE;
+        }
     }
     else
     {
-        bUpdateDB = TRUE;
+        DisplayErrorMessage( "PRK/AO install directory is not configured. Database update will be skipped until the directory is set in Options.", FALSE );
+        bUpdateDB = FALSE;
     }
 
     if( bUpdateDB )
