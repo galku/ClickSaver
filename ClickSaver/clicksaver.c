@@ -434,9 +434,15 @@ int main( int argc, char** argv )
 
     if( !OpenLocalDB() )
     {
-        DisplayErrorMessage( "Couldn't open local database.", FALSE );
-        CleanUp();
-        return -1;
+        if( g_AODir[ 0 ] )
+        {
+            DisplayErrorMessage( "Couldn't open local database. Please validate your PRK/AO install directory and restart the app.", FALSE );
+        }
+        else
+        {
+            DisplayErrorMessage( "No local database is available. Please configure the PRK/AO install directory under Options.", FALSE );
+        }
+        // Continue anyway so the user can enter or fix the install directory.
     }
 
     // Create mutex
