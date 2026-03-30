@@ -80,6 +80,7 @@ void ImportSettings( char* filename );
 void ExportSettings( char* filename );
 
 void DisplayErrorMessage( PUU8* _pMessage, PUU32 _bAsynchronous );
+void WriteStartupLog( const char* Format, ... );
 
 void GetFolder( HWND hWndOwner, char *strTitle, char *strPath );
 BOOL GetFile( HWND hWndOwner, BOOL saving, char *buffer, int buffersize );
@@ -110,6 +111,135 @@ DWORD WINAPI HookManagerThread( void *pParam );
 
 DB* g_pDB = NULL;
 
+BOOL FileExists( const char* filename )
+{
+    DWORD attrs = GetFileAttributesA( filename );
+    return ( attrs != INVALID_FILE_ATTRIBUTES && !( attrs & FILE_ATTRIBUTE_DIRECTORY ) );
+}
+
+BOOL FolderHasResourceDatabase( const char* folder )
+{
+    char path[ MAX_PATH ];
+
+    sprintf( path, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", folder );
+    if( FileExists( path ) )
+    {
+        return TRUE;
+    }
+
+    sprintf( path, "%s\\cd_image\\data\\db\\ResourceDatabase", folder );
+    return FileExists( path );
+}
+
+BOOL FindGameExecutable( const char* folder, char* exePath )
+{
+    char path[ MAX_PATH ];
+
+    sprintf( path, "%s\\anarchy.exe", folder );
+    if( FileExists( path ) )
+    {
+        strcpy( exePath, path );
+        return TRUE;
+    }
+
+    sprintf( path, "%s\\client\\anarchy.exe", folder );
+    if( FileExists( path ) )
+    {
+        strcpy( exePath, path );
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOL ResolveInstallRoot( const char* inputPath, char* outputPath )
+{
+    char candidate[ MAX_PATH ];
+    const char* lastSlash;
+    int length;
+
+    if( !inputPath || !inputPath[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    if( FolderHasResourceDatabase( inputPath ) )
+    {
+        if( FindGameExecutable( inputPath, candidate ) )
+        {
+            strcpy( outputPath, inputPath );
+            return TRUE;
+        }
+    }
+
+    sprintf( candidate, "%s\\client", inputPath );
+    if( FolderHasResourceDatabase( inputPath ) && FindGameExecutable( candidate, candidate ) )
+    {
+        strcpy( outputPath, inputPath );
+        return TRUE;
+    }
+
+    lastSlash = strrchr( inputPath, '\\' );
+    if( !lastSlash )
+    {
+        lastSlash = strrchr( inputPath, '/' );
+    }
+
+    if( lastSlash )
+    {
+        const char* tail = lastSlash + 1;
+        if( !_stricmp( tail, "client" ) )
+        {
+            length = (int)( lastSlash - inputPath );
+            if( length > 0 && length < MAX_PATH )
+            {
+                strncpy( candidate, inputPath, length );
+                candidate[ length ] = 0;
+                if( FolderHasResourceDatabase( candidate ) )
+                {
+                    strcpy( outputPath, candidate );
+                    return TRUE;
+                }
+            }
+        }
+    }
+
+    return FALSE;
+}
+
+BOOL GetInstallPathFromUI( char* outputPath )
+{
+    char* pBuffer = (char*)puGetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER );
+    if( !pBuffer || !pBuffer[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    strncpy( outputPath, pBuffer, MAX_PATH - 1 );
+    outputPath[ MAX_PATH - 1 ] = 0;
+    return TRUE;
+}
+
+BOOL ValidateInstallDir( const char* folder, char* resolvedPath )
+{
+    char exePath[ MAX_PATH ];
+    if( !folder || !folder[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    if( !ResolveInstallRoot( folder, resolvedPath ) )
+    {
+        return FALSE;
+    }
+
+    if( !FindGameExecutable( resolvedPath, exePath ) )
+    {
+        return FALSE;
+    }
+
+    return TRUE;
+}
 
 typedef enum ImportSettingsMode
 {
@@ -140,12 +270,14 @@ int main( int argc, char** argv )
     // Initialise PUL
     if( !puInit() )
     {
+        WriteStartupLog( "Startup error: puInit failed\n" );
         return -1;
     }
 
     // Register mission control class
     if( !RegisterMissionClass() )
     {
+        WriteStartupLog( "Startup error: RegisterMissionClass failed\n" );
         CleanUp();
         return -1;
     }
@@ -153,6 +285,7 @@ int main( int argc, char** argv )
     // Create the windows
     if( !( g_pCol = puCreateObjectCollection( g_GUIDef ) ) )
     {
+        WriteStartupLog( "Startup error: puCreateObjectCollection failed\n" );
         CleanUp();
         return -1;
     }
@@ -163,60 +296,105 @@ int main( int argc, char** argv )
 
     // Get current directory
     GetCurrentDirectory( MAX_PATH, g_CSDir );
+    WriteStartupLog( "Startup: current directory=%s\n", g_CSDir );
 
     ImportSettings( "LastSettings.cs" );
+    WriteStartupLog( "Startup: imported LastSettings.cs, AODir=%s\n", g_AODir );
 
     if( puGetAttribute( puGetObjectFromCollection( g_pCol, CS_STARTMIN_CB ), PUA_CHECKBOX_CHECKED ) )
         puSetAttribute( g_MainWin, PUA_WINDOW_ICONIFIED, TRUE );
 
-    sprintf( AOExePath, "%s\\anarchy.exe", g_AODir );
-    if( !( fp = fopen( AOExePath, "r" ) ) )
+    if( g_AODir[ 0 ] )
     {
-        GetFolder( NULL, "Please locate the AO directory:", g_AODir );
+        char resolvedDir[ MAX_PATH ];
 
-        if( !g_AODir[ 0 ] )
+        if( ValidateInstallDir( g_AODir, resolvedDir ) )
         {
-            CleanUp();
-            return -1;
+            strcpy( g_AODir, resolvedDir );
+            WriteStartupLog( "Startup: resolved saved AODir to %s\n", g_AODir );
         }
-
-        sprintf( AOExePath, "%s\\anarchy.exe", g_AODir );
-        if( !( fp = fopen( AOExePath, "r" ) ) )
+        else
         {
-            DisplayErrorMessage( "This is not AO's directory.", FALSE );
-            CleanUp();
-            return -1;
+            WriteStartupLog( "Startup: saved AODir invalid: %s\n", g_AODir );
+            g_AODir[ 0 ] = 0;
+            DisplayErrorMessage( "Saved PRK/AO install directory is invalid. Please choose a valid install directory in the PRK/AO options.", FALSE );
         }
     }
 
-    fclose( fp );
+    if( !g_AODir[ 0 ] )
+    {
+        char folder[ MAX_PATH ] = { 0 };
+
+        GetFolder( NULL, "Please locate the PRK/AO install directory:", folder );
+        SetCurrentDirectory( g_CSDir );
+
+        if( folder[ 0 ] )
+        {
+            char resolvedDir[ MAX_PATH ];
+            if( ValidateInstallDir( folder, resolvedDir ) )
+            {
+                strcpy( g_AODir, resolvedDir );
+                WriteStartupLog( "Startup: selected AODir %s\n", g_AODir );
+            }
+            else
+            {
+                WriteStartupLog( "Startup: selected invalid AODir %s\n", folder );
+                DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                g_AODir[ 0 ] = 0;
+            }
+        }
+        else
+        {
+            WriteStartupLog( "Startup: no PRK/AO install directory selected\n" );
+            DisplayErrorMessage( "PRK/AO install directory was not configured. Please set it in the PRK/AO options.", FALSE );
+        }
+    }
+
+    if( g_AODir[ 0 ] )
+    {
+        puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+
+        if( !FindGameExecutable( g_AODir, AOExePath ) )
+        {
+            DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+            g_AODir[ 0 ] = 0;
+        }
+    }
 
     /* Check if local database is up to date */
-    hLocalDB = CreateFile( "AODatabase.bdb", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
-
-    if( hLocalDB != INVALID_HANDLE_VALUE )
+    if( g_AODir[ 0 ] )
     {
-        sprintf( DBPath, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", g_AODir );
-        hOrigDB = CreateFile( DBPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
+        hLocalDB = CreateFile( "AODatabase.bdb", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
 
-        if( hOrigDB != INVALID_HANDLE_VALUE )
+        if( hLocalDB != INVALID_HANDLE_VALUE )
         {
-            FILETIME OrigTime, LocalTime;
+            sprintf( DBPath, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", g_AODir );
+            hOrigDB = CreateFile( DBPath, GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
 
-            GetFileTime( hLocalDB, NULL, NULL, &LocalTime );
-            GetFileTime( hOrigDB, NULL, NULL, &OrigTime );
+            if( hOrigDB != INVALID_HANDLE_VALUE )
+            {
+                FILETIME OrigTime, LocalTime;
 
-            if( CompareFileTime( &OrigTime, &LocalTime ) >= 0 )
-                bUpdateDB = TRUE;
+                GetFileTime( hLocalDB, NULL, NULL, &LocalTime );
+                GetFileTime( hOrigDB, NULL, NULL, &OrigTime );
 
-            CloseHandle( hOrigDB );
+                if( CompareFileTime( &OrigTime, &LocalTime ) >= 0 )
+                    bUpdateDB = TRUE;
+
+                CloseHandle( hOrigDB );
+            }
+
+            CloseHandle( hLocalDB );
         }
-
-        CloseHandle( hLocalDB );
+        else
+        {
+            bUpdateDB = TRUE;
+        }
     }
     else
     {
-        bUpdateDB = TRUE;
+        DisplayErrorMessage( "PRK/AO install directory is not configured. Database update will be skipped until the directory is set in Options.", FALSE );
+        bUpdateDB = FALSE;
     }
 
     if( bUpdateDB )
@@ -258,6 +436,7 @@ int main( int argc, char** argv )
     // Create Berkeley DB handle
     if( db_create( &g_pDB, NULL, 0 ) )
     {
+        WriteStartupLog( "Startup error: db_create failed\n" );
         DisplayErrorMessage( "Couldn't create Berkeley DB handle.", FALSE );
         CleanUp();
         return -1;
@@ -267,14 +446,22 @@ int main( int argc, char** argv )
 
     if( !OpenLocalDB() )
     {
-        DisplayErrorMessage( "Couldn't open local database.", FALSE );
-        CleanUp();
-        return -1;
+        WriteStartupLog( "Startup warning: OpenLocalDB failed, AODir=%s\n", g_AODir );
+        if( g_AODir[ 0 ] )
+        {
+            DisplayErrorMessage( "Couldn't open local database. Please validate your PRK/AO install directory and restart the app.", FALSE );
+        }
+        else
+        {
+            DisplayErrorMessage( "No local database is available. Please configure the PRK/AO install directory under Options.", FALSE );
+        }
+        // Continue anyway so the user can enter or fix the install directory.
     }
 
     // Create mutex
     if( ( g_Mutex = CreateMutex( NULL, FALSE, "ClickSaver" ) ) == INVALID_HANDLE_VALUE )
     {
+        WriteStartupLog( "Startup error: CreateMutex failed, err=%u\n", GetLastError() );
         DisplayErrorMessage( "Couldn't create mutex.", FALSE );
         ReleaseAODatabase();
         CleanUp();
@@ -285,6 +472,7 @@ int main( int argc, char** argv )
         HWND hWnd;
         if( hWnd = FindWindow( "ClickSaverHookWindowClass", "ClickSaverHookWindow" ) )
         {
+            WriteStartupLog( "Startup error: another instance detected\n" );
             // send some message
             return -1;
         }
@@ -292,6 +480,7 @@ int main( int argc, char** argv )
     // Starts dll hook management thread
     if( ( g_Thread = CreateThread( NULL, 0, &HookManagerThread, NULL, 0, &dwThreadID ) ) == INVALID_HANDLE_VALUE )
     {
+        WriteStartupLog( "Startup error: CreateThread failed, err=%u\n", GetLastError() );
         DisplayErrorMessage( "Couldn't create hook thread.", FALSE );
         ReleaseAODatabase();
         CleanUp();
@@ -565,6 +754,52 @@ int main( int argc, char** argv )
         }
         break;
 
+        case CSAM_BROWSE_INSTALLDIR:
+        {
+            char folder[ MAX_PATH ];
+            folder[ 0 ] = 0;
+            GetFolder( (HWND)puGetAttribute( puGetObjectFromCollection( g_pCol, CS_MAIN_WINDOW ), PUA_WINDOW_HANDLE ), "Choose PRK/AO install directory:", folder );
+            SetCurrentDirectory( g_CSDir );
+            if( folder[ 0 ] )
+            {
+                char resolvedDir[ MAX_PATH ];
+                if( ResolveInstallRoot( folder, resolvedDir ) )
+                {
+                    strcpy( g_AODir, resolvedDir );
+                    puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                }
+                else
+                {
+                    DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                }
+            }
+        }
+        break;
+
+        case CSAM_VALIDATE_INSTALLDIR:
+        {
+            char folder[ MAX_PATH ];
+            if( GetInstallPathFromUI( folder ) )
+            {
+                char resolvedDir[ MAX_PATH ];
+                if( ResolveInstallRoot( folder, resolvedDir ) )
+                {
+                    strcpy( g_AODir, resolvedDir );
+                    puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                    DisplayErrorMessage( "Install directory validated successfully.", FALSE );
+                }
+                else
+                {
+                    DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                }
+            }
+            else
+            {
+                DisplayErrorMessage( "Please enter or browse to a PRK/AO install directory.", FALSE );
+            }
+        }
+        break;
+
         case CSAM_STOPFULLSCREEN:
             g_bFullscreen = 0;
             puSetAttribute( puGetObjectFromCollection( g_pCol, CS_FULLSCREEN_WINDOW ), PUA_WINDOW_OPENED, FALSE );
@@ -818,6 +1053,10 @@ void ImportSettings( char* filename )
                 {
                 case CFG_AODIR:
                     strcpy( g_AODir, Value );
+                    if( g_pCol )
+                    {
+                        puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                    }
                     break;
 
                 case CFG_WINDOWX:
@@ -1131,6 +1370,7 @@ void ExportSettings( char* filename )
 
 void DisplayErrorMessage( PUU8* _pMessage, PUU32 _bAsynchronous )
 {
+    WriteStartupLog( "DisplayErrorMessage: %s\n", _pMessage );
     puSetAttribute( puGetObjectFromCollection( g_pCol, CS_ERROR_TEXT ), PUA_TEXT_STRING, (PUU32)_pMessage );
     puSetAttribute( puGetObjectFromCollection( g_pCol, CS_ERROR_WINDOW ), PUA_WINDOW_OPENED, TRUE );
 
@@ -1353,6 +1593,34 @@ void WriteLog( const char* Format, ... )
         va_end( argptr );
     }
     /**/
+}
+
+
+void WriteStartupLog( const char* Format, ... )
+{
+    va_list argptr;
+    static FILE *fp = NULL;
+    if( Format == NULL )
+    {
+        if( fp )
+        {
+            fclose( fp );
+            fp = NULL;
+        }
+        return;
+    }
+    if( !fp )
+    {
+        fp = fopen( "clicksaver.log", "a" );
+    }
+    if( !fp )
+    {
+        return;
+    }
+    va_start( argptr, Format );
+    vfprintf( fp, Format, argptr );
+    va_end( argptr );
+    fflush( fp );
 }
 
 

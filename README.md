@@ -1,13 +1,34 @@
 # ClickSaver
 ClickSaver for Anarchy Online
 
-This is an *unofficial* fork of ClickSaver (if you want to call the current situation as *official*) based on the latest available sources from AOU [1] and Darkbane [2].
+This is an *unofficial* fork of ClickSaver (if you want to call the current situation as *official*) based on historical sources from AOU [1] and Darkbane [2]. Current development is hosted at `https://github.com/galku/ClickSaver` and includes PRK-style Anarchy Online install support.
 
 
 ## Compilation
 
 VS2022 with the toolchain set to v141_xp to get CS to still run under WinXP additonal to all newer Windows versions.
 The solution should still work in all VS versions down to VS2010 if the toolset is changed to the latest version supported by that version.
+
+## PRK/AO fork support
+
+This fork adds a new install-directory option for PRK-style Anarchy Online installs. The UI now includes:
+
+- an editable install path field
+- a `Browse...` button for folder selection
+- a `Validate` button to confirm the selected or typed directory
+
+The app accepts both classic AO install roots and PRK install layouts.
+
+## Fork and push
+
+This code is currently available at `https://github.com/galku/ClickSaver` and supports PRK installs via the `prk-install-ui` branch.
+
+Create your own GitHub fork, then add it as a remote and push the feature branch:
+
+```bash
+git remote add myfork https://github.com/<your-user>/ClickSaver.git
+git push myfork prk-install-ui
+```
 
 
 ## Quick history tour
