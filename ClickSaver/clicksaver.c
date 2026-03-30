@@ -110,6 +110,101 @@ DWORD WINAPI HookManagerThread( void *pParam );
 
 DB* g_pDB = NULL;
 
+BOOL FileExists( const char* filename )
+{
+    DWORD attrs = GetFileAttributesA( filename );
+    return ( attrs != INVALID_FILE_ATTRIBUTES && !( attrs & FILE_ATTRIBUTE_DIRECTORY ) );
+}
+
+BOOL FolderHasResourceDatabase( const char* folder )
+{
+    char path[ MAX_PATH ];
+
+    sprintf( path, "%s\\cd_image\\data\\db\\ResourceDatabase.dat", folder );
+    if( FileExists( path ) )
+    {
+        return TRUE;
+    }
+
+    sprintf( path, "%s\\cd_image\\data\\db\\ResourceDatabase", folder );
+    return FileExists( path );
+}
+
+BOOL FindGameExecutable( const char* folder, char* exePath )
+{
+    char path[ MAX_PATH ];
+
+    sprintf( path, "%s\\anarchy.exe", folder );
+    if( FileExists( path ) )
+    {
+        strcpy( exePath, path );
+        return TRUE;
+    }
+
+    sprintf( path, "%s\\client\\anarchy.exe", folder );
+    if( FileExists( path ) )
+    {
+        strcpy( exePath, path );
+        return TRUE;
+    }
+
+    return FALSE;
+}
+
+BOOL ResolveInstallRoot( const char* inputPath, char* outputPath )
+{
+    char candidate[ MAX_PATH ];
+    const char* lastSlash;
+    int length;
+
+    if( !inputPath || !inputPath[ 0 ] )
+    {
+        return FALSE;
+    }
+
+    if( FolderHasResourceDatabase( inputPath ) )
+    {
+        if( FindGameExecutable( inputPath, candidate ) )
+        {
+            strcpy( outputPath, inputPath );
+            return TRUE;
+        }
+    }
+
+    sprintf( candidate, "%s\\client", inputPath );
+    if( FolderHasResourceDatabase( inputPath ) && FindGameExecutable( candidate, candidate ) )
+    {
+        strcpy( outputPath, inputPath );
+        return TRUE;
+    }
+
+    lastSlash = strrchr( inputPath, '\\' );
+    if( !lastSlash )
+    {
+        lastSlash = strrchr( inputPath, '/' );
+    }
+
+    if( lastSlash )
+    {
+        const char* tail = lastSlash + 1;
+        if( !_stricmp( tail, "client" ) )
+        {
+            length = (int)( lastSlash - inputPath );
+            if( length > 0 && length < MAX_PATH )
+            {
+                strncpy( candidate, inputPath, length );
+                candidate[ length ] = 0;
+                if( FolderHasResourceDatabase( candidate ) )
+                {
+                    strcpy( outputPath, candidate );
+                    return TRUE;
+                }
+            }
+        }
+    }
+
+    return FALSE;
+}
 
 typedef enum ImportSettingsMode
 {
@@ -169,10 +264,28 @@ int main( int argc, char** argv )
     if( puGetAttribute( puGetObjectFromCollection( g_pCol, CS_STARTMIN_CB ), PUA_CHECKBOX_CHECKED ) )
         puSetAttribute( g_MainWin, PUA_WINDOW_ICONIFIED, TRUE );
 
-    sprintf( AOExePath, "%s\\anarchy.exe", g_AODir );
-    if( !( fp = fopen( AOExePath, "r" ) ) )
+    if( g_AODir[ 0 ] )
     {
-        GetFolder( NULL, "Please locate the AO directory:", g_AODir );
+        char resolvedDir[ MAX_PATH ];
+
+        if( ResolveInstallRoot( g_AODir, resolvedDir ) )
+        {
+            strcpy( g_AODir, resolvedDir );
+        }
+        else
+        {
+            g_AODir[ 0 ] = 0;
+        }
+    }
+
+    if( g_AODir[ 0 ] )
+    {
+        puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+    }
+
+    if( !g_AODir[ 0 ] )
+    {
+        GetFolder( NULL, "Please locate the PRK/AO install directory:", g_AODir );
 
         if( !g_AODir[ 0 ] )
         {
@@ -180,16 +293,23 @@ int main( int argc, char** argv )
             return -1;
         }
 
-        sprintf( AOExePath, "%s\\anarchy.exe", g_AODir );
-        if( !( fp = fopen( AOExePath, "r" ) ) )
+        char resolvedDir[ MAX_PATH ];
+        if( !ResolveInstallRoot( g_AODir, resolvedDir ) )
         {
-            DisplayErrorMessage( "This is not AO's directory.", FALSE );
+            DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
             CleanUp();
             return -1;
         }
+
+        strcpy( g_AODir, resolvedDir );
     }
 
-    fclose( fp );
+    if( !FindGameExecutable( g_AODir, AOExePath ) )
+    {
+        DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+        CleanUp();
+        return -1;
+    }
 
     /* Check if local database is up to date */
     hLocalDB = CreateFile( "AODatabase.bdb", GENERIC_READ, FILE_SHARE_READ, NULL, OPEN_EXISTING, 0, NULL );
@@ -562,6 +682,28 @@ int main( int argc, char** argv )
                 ImportSettings( buffer );
             }
             SetCurrentDirectory( g_CSDir );
+        }
+        break;
+
+        case CSAM_BROWSE_INSTALLDIR:
+        {
+            char folder[ MAX_PATH ];
+            folder[ 0 ] = 0;
+            GetFolder( (HWND)puGetAttribute( puGetObjectFromCollection( g_pCol, CS_MAIN_WINDOW ), PUA_WINDOW_HANDLE ), "Choose PRK/AO install directory:", folder );
+            SetCurrentDirectory( g_CSDir );
+            if( folder[ 0 ] )
+            {
+                char resolvedDir[ MAX_PATH ];
+                if( ResolveInstallRoot( folder, resolvedDir ) )
+                {
+                    strcpy( g_AODir, resolvedDir );
+                    puSetAttribute( puGetObjectFromCollection( g_pCol, CS_INSTALLDIR_ENTRY ), PUA_TEXTENTRY_BUFFER, (PUU32)g_AODir );
+                }
+                else
+                {
+                    DisplayErrorMessage( "This is not a valid PRK/AO install directory.", FALSE );
+                }
+            }
         }
         break;
 
