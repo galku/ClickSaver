@@ -1,7 +1,7 @@
 # ClickSaver
 ClickSaver for Anarchy Online
 
-This is an *unofficial* fork of ClickSaver (if you want to call the current situation as *official*) based on the latest available sources from AOU [1] and Darkbane [2].
+This is an *unofficial* fork of ClickSaver (if you want to call the current situation as *official*) based on historical sources from AOU [1] and Darkbane [2]. Current development is hosted at `https://github.com/galku/ClickSaver` and includes PRK-style Anarchy Online install support.
 
 
 ## Compilation
@@ -20,6 +20,8 @@ This fork adds a new install-directory option for PRK-style Anarchy Online insta
 The app accepts both classic AO install roots and PRK layouts such as `M:\prk2\client` or `C:\Users\madcow\AppData\Local\Funcom\Anarchy Online\8d86be5c\client`.
 
 ## Fork and push
+
+This code is currently available at `https://github.com/galku/ClickSaver` and supports PRK installs via the `prk-install-ui` branch.
 
 Create your own GitHub fork, then add it as a remote and push the feature branch:
 
