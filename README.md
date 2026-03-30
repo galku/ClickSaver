@@ -17,7 +17,7 @@ This fork adds a new install-directory option for PRK-style Anarchy Online insta
 - a `Browse...` button for folder selection
 - a `Validate` button to confirm the selected or typed directory
 
-The app accepts both classic AO install roots and PRK layouts such as `M:\prk2\client` or `C:\Users\madcow\AppData\Local\Funcom\Anarchy Online\8d86be5c\client`.
+The app accepts both classic AO install roots and PRK install layouts.
 
 ## Fork and push
 
